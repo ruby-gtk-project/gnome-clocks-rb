@@ -10,13 +10,17 @@ files in `data/ui/` (~2 080 lines), one stylesheet (`data/css/gnome-clocks.css`,
 25 app CSS classes), one GSettings schema file with 4 schemas, one GResource
 manifest, and 83 languages in `po/` (plus 25 in `help/`).
 
-Port shape on `ruby` today: `lib/gnome_clocks.rb`,
-`lib/gnome_clocks/application.rb` (a scaffold: `Adwaita::ApplicationWindow` +
-`Adwaita::ToolbarView` + `Adwaita::HeaderBar` + an `Adwaita::StatusPage` reading
-"The Ruby port has not been written yet."), and `lib/gnome/clocks/rb/version.rb`.
-**No user-facing component is ported yet.** Target paths follow the pilot port
-(`gnome-contacts-rb`): flat `lib/<snake_case>.rb`, one file per upstream unit,
-with `lib/main.rb` as the app/launcher class.
+Port shape on `ruby` today (re-surveyed 2026-11-02): the scaffold
+`lib/gnome_clocks/application.rb` is gone; `lib/gnome_clocks.rb` is now a thin
+namespace aliasing `GnomeClocks::Application = ::App`, and `lib/` holds ~3 200
+lines across 16 real port files — the application, the window, the header bar,
+the shortcuts dialog, the `Clock`/`PanelId`/`ButtonMode` contracts, the content
+store and AM/PM toggle, the utils layer, a `Settings` shim, and the **whole
+Stopwatch and Timer panels**. **The World and Alarm panels are not ported at
+all**, and neither are the sound, geocoding, search-provider and shell-D-Bus
+support units. Target paths follow the pilot port (`gnome-contacts-rb`): flat
+`lib/<snake_case>.rb`, one file per upstream unit, with `lib/main.rb` as the
+app/launcher class.
 
 Upstream splits most components across a `.vala` class and its `.ui` template;
 the two halves union into one port file.
@@ -36,7 +40,7 @@ the menu and the shortcuts dialog). Accelerators set in `startup`:
 `app.quit`→`<Control>q`, `win.navigate-backward`→`<Control><Alt>Page_Up`,
 `win.navigate-forward`→`<Control><Alt>Page_Down`. CLI option `--version`/`-v`.
 Tracks sent `GLib.Notification` ids and withdraws them when the window becomes
-active or on shutdown. **Exists: no.**
+active or on shutdown. **Exists: yes.**
 
 ## src/window.vala + data/ui/window.ui → `lib/window.rb` — the main window: four panels, two subpages
 
@@ -56,7 +60,7 @@ active or on shutdown. **Exists: no.**
 Actions on `win.`: `new`, `help`, `navigate-forward`, `navigate-backward`,
 `about`, plus the widget action `set-page` (param `s`) bound to `<Alt>1..4`.
 Persists `maximized`, `size`, `panel-id` to `org.gnome.clocks.state.window`.
-**Exists: no.**
+**Exists: yes.**
 
 ## src/header-bar.vala + data/ui/header-bar.ui → `lib/header_bar.rb` — the header bar and primary menu
 
@@ -71,7 +75,7 @@ Persists `maximized`, `size`, `panel-id` to `org.gnome.clocks.state.window`.
 | `GMenu` `primary-menu` | 1 | — | — | 3 items: `app.shortcuts` ("Keyboard Shortcuts"), `win.help` ("Help"), `win.about` ("About Clocks") |
 
 Properties `button-mode` (NORMAL/SELECTION-ish enum) and `new-label`, bound per
-visible panel by the window. **Exists: no.**
+visible panel by the window. **Exists: yes.**
 
 ## data/ui/shortcuts-dialog.ui → `lib/shortcuts_dialog.rb` — keyboard shortcuts dialog
 
@@ -83,14 +87,14 @@ Standalone `.ui` with no backing source file.
 | `Adw.ShortcutsSection` | 5 | — | — | General, World Clocks, Alarm, Stopwatch, Timer |
 | `Adw.ShortcutsItem` | 15 | — | — | Show Help (`win.help`), Open Menu, Keyboard Shortcuts (`app.shortcuts`), Quit (`app.quit`), Next/Previous Section (`win.navigate-forward`/`-backward`), Go to the World/Alarms/Stopwatch/Timer Section (`<Alt>1..4`), Add a World Clock (`win.new`), Add an Alarm (`win.new`), Pause All, Reset, New Timer (`win.new`) |
 
-**Exists: no.**
+**Exists: yes.**
 
 ## src/clock.vala → `lib/clock.rb` — the panel interface and panel id enum
 
 Not a widget: `Clocks.PanelId` (`WORLD`, `ALARM`, `STOPWATCH`, `TIMER`) and the
 `Clock` interface (`panel_id`, `button_mode`, `new_label`, `activate_new`,
 `escape_pressed`) that all four faces implement and the window drives.
-**Exists: no.**
+**Exists: yes.**
 
 ## src/widgets.vala → `lib/widgets.rb` — ContentStore and the AM/PM toggle
 
@@ -102,7 +106,7 @@ Not a widget: `Clocks.PanelId` (`WORLD`, `ALARM`, `STOPWATCH`, `TIMER`) and the
 
 Also `ContentItem` (interface) and `ContentStore` (a `GLib.ListModel` over
 `GListStore` with add/remove/foreach/find/serialize/deserialize) — the model
-every face's list is built on. **Exists: no.**
+every face's list is built on. **Exists: yes.**
 
 ## src/utils.vala → `lib/utils.rb` — WallClock, time formatting, weekday helpers
 
@@ -111,7 +115,7 @@ Not a widget. The ticking `Utils.WallClock` singleton (`seconds_precision`,
 formatting, "Current timezone" / "%s hour(s) ahead|behind" strings, the
 `Utils.Weekdays` bitfield with its 7 single-letter symbols (`Alarm|Repeat-On|…`
 msgctxt), plural day names, and the "Every Day" / "Weekdays" / "Weekends"
-summaries. Every face depends on it. **Exists: no.**
+summaries. Every face depends on it. **Exists: yes.**
 
 ---
 
@@ -351,12 +355,12 @@ the chooser, the ringing alarm and the finished timer (`sounds/complete.oga`).
 | `Gtk.Button` | 2 | `large-button`+`pill`+`suggested-action`; `large-button`+`pill` | `clicked` → `on_start_btn_clicked`; `clicked` → `on_clear_btn_clicked` | labels cycle "St_art"/"_Pause"/"R_esume" and "_Clear"/"_Lap" |
 
 Escape resets; the panel has no `win.new` button (`button-mode` hides it).
-**Exists: no.**
+**Exists: yes.**
 
 ## src/stopwatch-lap.vala → `lib/stopwatch_lap.rb` — one lap (model)
 
 Not a widget: index, total duration, difference from the previous lap.
-**Exists: no.**
+**Exists: yes.**
 
 ## src/stopwatch-laps-row.vala + data/ui/stopwatch-laps-row.ui → `lib/stopwatch_laps_row.rb` — one lap row
 
@@ -366,7 +370,7 @@ Not a widget: index, total duration, difference from the previous lap.
 | `Gtk.Box` | 1 | — | — | |
 | `Gtk.Label` | 3 | `lap-time`+`numeric`; `numeric`; `dimmed` | — | duration (tooltip "Time"), difference (tooltip "Difference"), lap index |
 
-**Exists: no.**
+**Exists: yes.**
 
 ## Timer panel
 
@@ -385,12 +389,12 @@ Not a widget: index, total duration, difference from the previous lap.
 
 Sends the `GLib.Notification` "Time is up!" / "Timer countdown finished"
 (HIGH priority) when unfocused, plays `complete.oga`, persists the `timers`
-GSettings key. **Exists: no.**
+GSettings key. **Exists: yes.**
 
 ## src/timer-item.vala → `lib/timer_item.rb` — one timer (model)
 
 Not a widget: duration, name, running/paused/finished state, remaining time
-ticking, serialize/deserialize. **Exists: no.**
+ticking, serialize/deserialize. **Exists: yes.**
 
 ## src/timer-row.vala + data/ui/timer-row.ui → `lib/timer_row.rb` — one timer row
 
@@ -406,7 +410,7 @@ ticking, serialize/deserialize. **Exists: no.**
 | `Gtk.Button` | 4 | `circular`+`large-button`; `suggested-action`+`circular`+`large-button`; `circular`; `circular` | `clicked` → `on_pause_button_clicked`, `on_start_button_clicked`, `on_reset_button_clicked`, delete | Pause, Start, Reset, Delete with `media-playback-pause-symbolic`, `media-playback-start-symbolic`, `view-refresh-symbolic`, `user-trash-symbolic` |
 | `Adw.Bin` | 3 | — | — | the empty pages of the three button stacks |
 
-**Exists: no.**
+**Exists: yes.**
 
 ## src/timer-setup.vala + data/ui/timer-setup.ui → `lib/timer_setup.rb` — the timer setup pane
 
@@ -422,7 +426,7 @@ ticking, serialize/deserialize. **Exists: no.**
 | `Gtk.SpinButton` | 3 | `clocks-spinbutton` | `changed` → `update_duration`, `output` → `show_leading_zeros`, `input` → `input_minutes` / `input_seconds` | Hours, Minutes, Seconds (+3 `Gtk.Adjustment`, 1 `Gtk.SizeGroup`) |
 | `Gtk.Entry` | 1 | — | — | placeholder "Title" |
 
-**Exists: no.**
+**Exists: yes.**
 
 ## src/timer-setup-dialog.vala + data/ui/timer-setup-dialog.ui → `lib/timer_setup_dialog.rb` — "New Timer" dialog
 
@@ -434,7 +438,7 @@ ticking, serialize/deserialize. **Exists: no.**
 | `Gtk.Box` | 1 | — | — | `timer_box`, hosts a second `ClocksTimerSetup` |
 | `Gtk.Button` | 1 | `pill`, `suggested-action` | `clicked` → `create_clicked` | "Start" |
 
-**Exists: no.**
+**Exists: yes.**
 
 ---
 
@@ -446,7 +450,7 @@ ticking, serialize/deserialize. **Exists: no.**
 | `src/config.vapi`, `src/meson.build`, `meson.build`, `data/meson.build` | build plumbing; the port uses the fork's Gemfile/flake |
 | `data/gnome-clocks.gresource.xml` | resource manifest — in the port, icons/sounds/CSS are loaded from disk |
 | `data/css/gnome-clocks.css` | 25 app CSS classes; the port needs a `Gtk::CssProvider` loading an equivalent stylesheet (owned by `lib/utils.rb`) |
-| `data/org.gnome.clocks.gschema.xml.in` | 4 schemas / 7 keys (`world-clocks`, `alarms`, `timers`, `geolocation`, `maximized`, `size`, `panel-id`) → a `lib/settings.rb` in the port, as in the pilot |
+| `data/org.gnome.clocks.gschema.xml.in` | 4 schemas / 7 keys (`world-clocks`, `alarms`, `timers`, `geolocation`, `maximized`, `size`, `panel-id`) → `lib/settings.rb` in the port, as in the pilot. **Exists: yes** (a JSON-file-backed shim, since the port ships no compiled schema) |
 | `data/org.gnome.clocks.desktop.in.in`, `.metainfo.xml.in.in`, `.service.in`, `.search-provider.ini.in` | packaging metadata |
 | `po/` (83 languages, 39 POTFILES entries), `help/` (12 pages, 25 languages) | translation and user-help catalogues; parity work for the translation-parity step |
 
@@ -454,8 +458,27 @@ ticking, serialize/deserialize. **Exists: no.**
 
 ## Totals
 
-- 24 user-facing component units (windows, dialogs, pages, rows, menus, shortcuts, empty/ringing states), 0 ported.
-- 10 non-widget support units (models, stores, settings, utils, sound, geocoding, D-Bus providers), 0 ported.
-- 25 app CSS classes, 0 defined in the port.
-- 11 `app.`/`win.` actions plus 2 scoped action groups (`repeats.day-0..6`, `timer-setup.start-timer`) and 1 widget action (`win.set-page`), 0 installed in the port.
-- 6 accelerators + 4 `<Alt>N` bindings, 0 installed in the port.
+- **23 user-facing component units** (windows, dialogs, pages, rows, menus,
+  shortcuts, empty/ringing states) — **11 ported, 12 missing.**
+  - Ported: the application, the window, the header bar + primary menu, the
+    shortcuts dialog, the AM/PM toggle, the Stopwatch panel + lap row, the
+    Timer panel + timer row + timer setup + timer setup dialog.
+  - Missing: the whole **World** panel (face, row, standalone subpage, location
+    dialog, location dialog row) and the whole **Alarm** panel (face, row, setup
+    dialog, day picker row, ringing panel, sound chooser, sound chooser row).
+- **11 non-widget support units** (models, stores, utils, sound, geocoding,
+  D-Bus providers) — **4 ported** (`clock.rb`, `utils.rb`, `stopwatch_lap.rb`,
+  `timer_item.rb`), plus the `ContentStore` inside `widgets.rb` and the
+  `settings.rb` schema shim. **Missing:** `world_item.rb`, `alarm_item.rb`,
+  `alarm_sound_model.rb`, `sound.rb`, `geocoding.rb`,
+  `world_shell_world_clocks.rb`, `search_provider.rb`.
+- 25 app CSS classes; the port loads a stylesheet from `lib/utils.rb`, so the
+  Stopwatch/Timer classes are in place and the World/Alarm ones are not.
+- 11 `app.`/`win.` actions plus 2 scoped action groups (`repeats.day-0..6`,
+  `timer-setup.start-timer`) and 1 widget action (`win.set-page`) — installed
+  except `app.stop-alarm`, `app.snooze-alarm`, `app.add-location` and the
+  `repeats.*` group, which belong to the unported panels.
+- 6 accelerators + 4 `<Alt>N` bindings, installed in `lib/main.rb`.
+- Data shipped so far: `data/sounds/complete.oga` + `CREDITS` only. The 22
+  bundled alarm `.flac`s, the app icons and the symbolic panel icons are still
+  missing, and the Alarm panel cannot reach parity without them.
