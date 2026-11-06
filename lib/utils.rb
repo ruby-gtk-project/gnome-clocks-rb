@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'adwaita'
+require 'gnome_desktop'
 
 # Utils holds the pieces the panels share: the wall clock every face ticks
 # from, the time and duration formatters, the weekday set alarms repeat on,
@@ -11,12 +12,8 @@ require 'adwaita'
 # `get_week_start` — plus data/css/gnome-clocks.css, which upstream ships in
 # its GResource and loads from the application's startup handler.
 #
-# Three deliberate deviations from upstream:
+# Two deliberate deviations from upstream:
 #
-#   * upstream's WallClock wraps Gnome.WallClock from libgnome-desktop, which
-#     has no Ruby binding; this one drives itself off a GLib timeout realigned
-#     to the next minute (or second) boundary after every tick, which is what
-#     libgnome-desktop does internally;
 #   * upstream reads the system clock format from the org.freedesktop.portal
 #     Settings interface and only falls back to GSettings; there is no portal
 #     binding in ruby-gnome, so this port reads org.gnome.desktop.interface
@@ -25,6 +22,11 @@ require 'adwaita'
 #     has no Ruby binding either, so the unit names and the "and" join are
 #     spelled out here; the output is the same shape ("1 hour and 5 minutes",
 #     abbreviated "1 h 5 min").
+#
+# WallClock below wraps the real GnomeDesktop::WallClock the gnome_desktop
+# gem provides, the same Gnome.WallClock class upstream's own WallClock
+# wraps; an earlier round of this port, written before that gem was wired
+# in, stood in for it with a hand-timed GLib::Timeout instead.
 #
 module Utils
   # The solar depression angles upstream passes to calculate_sunrise_sunset to
@@ -280,34 +282,43 @@ module Utils
   # WallClock is the single clock every face and item reads the time from, so
   # a minute boundary moves the whole app at once.
   #
-  # Ported from Utils.WallClock in src/utils.vala.
+  # Ported from Utils.WallClock in src/utils.vala, which wraps
+  # Gnome.WallClock from libgnome-desktop. The gnome_desktop gem gives this
+  # port the real thing — GnomeDesktop::WallClock — and this class now ticks
+  # off its `notify::clock` signal rather than the previous round's
+  # hand-timed GLib::Timeout realigned to the next boundary by hand: that
+  # self-rolled scheduler is gone, replaced by the C implementation's own.
+  #
+  # One piece of the gem does not carry over: GnomeDesktop::WallClock#clock
+  # is typed GLib.DateTime, but this binding marshals it back as the
+  # *formatted display string* ("6 Nov 23:53") rather than the DateTime
+  # object, so `date_time` below still builds its own DateTime from the
+  # clock's timezone — the same construction the previous round used, now
+  # driven by the gem's own tick instead of a self-scheduled one.
   class WallClock
     TWELVE = :twelve
     TWENTYFOUR = :twentyfour
 
     def self.default = @default ||= new
 
-    attr_reader :date_time, :timezone, :format
-
     def initialize
-      @timezone = GLib::TimeZone.new(nil)
+      @gnome_clock = GnomeDesktop::WallClock.new
       @format = read_format
-      @seconds_precision = false
       @listeners = []
       watch_format
-      update
-      schedule
+      @gnome_clock.signal_connect('notify::clock') { notify }
     end
+
+    def date_time = GLib::DateTime.now(timezone)
+    def timezone = @gnome_clock.timezone
+    attr_reader :format
 
     # Upstream mirrors this straight onto Gnome.WallClock's force_seconds; the
     # world standalone page turns it on so its clock counts seconds.
-    attr_reader :seconds_precision
+    def seconds_precision = @gnome_clock.force_seconds?
 
     def seconds_precision=(value)
-      unless value == @seconds_precision
-        @seconds_precision = value
-        reschedule
-      end
+      @gnome_clock.force_seconds = value
     end
 
     # Upstream's `tick` signal. Items connect to it in their constructors and
@@ -318,10 +329,10 @@ module Utils
     end
 
     # Upstream emits tick by hand once at startup so an alarm that should
-    # already be ringing is noticed before the first timeout fires.
+    # already be ringing is noticed before the wall clock's own first
+    # notification.
     def tick
-      update
-      @listeners.each(&:call)
+      notify
       self
     end
 
@@ -336,17 +347,17 @@ module Utils
 
     private
 
+      def notify
+        @listeners.each(&:call)
+        self
+      end
+
       def time_format(seconds)
         if seconds
           @format == TWELVE ? '%I:%M:%S %p' : '%H:%M:%S'
         else
           @format == TWELVE ? '%I:%M %p' : '%H:%M'
         end
-      end
-
-      def update
-        @timezone = GLib::TimeZone.new(nil)
-        @date_time = GLib::DateTime.now(@timezone)
       end
 
       def settings = @settings ||= Gio::Settings.new(CLOCK_FORMAT_SCHEMA)
@@ -359,29 +370,6 @@ module Utils
         settings.signal_connect("changed::#{CLOCK_FORMAT_PROPERTY_NAME}") do
           @format = read_format
           tick
-        end
-      end
-
-      # The next boundary rather than a fixed interval, so the displayed
-      # minute changes when the minute does.
-      def schedule
-        @timeout_id = GLib::Timeout.add(milliseconds_to_boundary) do
-          @timeout_id = nil
-          tick
-          schedule
-          GLib::Source::REMOVE
-        end
-      end
-
-      def reschedule
-        GLib::Source.remove(@timeout_id) if @timeout_id
-        @timeout_id = nil
-        schedule
-      end
-
-      def milliseconds_to_boundary
-        (@seconds_precision ? 1 : 60).then do |step|
-          Time.now.then { |now| ((step - (now.to_f % step)) * 1000).ceil }
         end
       end
   end

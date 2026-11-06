@@ -8,6 +8,8 @@ require_relative 'header_bar'
 require_relative 'shortcuts_dialog'
 require_relative 'stopwatch_face'
 require_relative 'timer_face'
+require_relative 'world_face'
+require_relative 'world_standalone'
 
 # Window is the application window: a navigation view whose main page carries
 # the header bar, the view stack of panels and the view switcher bar, with the
@@ -15,11 +17,11 @@ require_relative 'timer_face'
 #
 # Ported from Clocks.Window in src/window.vala and data/ui/window.ui.
 #
-# The panels it hosts are the ones this port has: Stopwatch and Timer. The
-# panel list is a constant, so a panel arriving later is added in one place,
-# and everything keyed off it — the view stack pages, the Alt+N accelerators,
-# the shortcuts dialog's sections, navigate-forward and the restored panel —
-# follows from it.
+# The panels it hosts are the ones this port has: World, Stopwatch and Timer.
+# The panel list is a constant, so a panel arriving later is added in one
+# place, and everything keyed off it — the view stack pages, the Alt+N
+# accelerators, the shortcuts dialog's sections, navigate-forward and the
+# restored panel — follows from it.
 #
 class Window < Adwaita::ApplicationWindow
   NARROW_CONDITION = 'max-width: 600sp'
@@ -37,6 +39,7 @@ class Window < Adwaita::ApplicationWindow
   # Each panel's view stack page: its title, with upstream's mnemonic, and its
   # icon.
   PANELS = {
+    PanelId::WORLD     => ['_World', 'world-clocks-symbolic', WorldFace],
     PanelId::STOPWATCH => ['_Stopwatch', 'stopwatch-symbolic', StopwatchFace],
     PanelId::TIMER     => ['_Timer', 'timer-symbolic', TimerFace],
   }.freeze
@@ -288,12 +291,22 @@ class Window < Adwaita::ApplicationWindow
     # Upstream puts the needs-attention dot on a panel's page while its
     # stopwatch runs or its timer counts down.
     def watch_panels
+      panel(PanelId::WORLD).on_show_standalone { |item| push_standalone(item) }
       panel(PanelId::STOPWATCH).on_state_changed do |state|
         needs_attention(PanelId::STOPWATCH, state == StopwatchFace::RUNNING)
       end
       panel(PanelId::TIMER).on_is_running_changed do |running|
         needs_attention(PanelId::TIMER, running)
       end
+      self
+    end
+
+    # Upstream's show_standalone: activating a world clock's row pushes a
+    # subpage with the big clock face for that one location.
+    def push_standalone(item)
+      navigation_view.push(
+        Adwaita::NavigationPage.new(WorldStandalone.new(item).build, item.city_name),
+      )
       self
     end
 
