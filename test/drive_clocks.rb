@@ -63,6 +63,7 @@ require_relative "../lib/alarm_item"
 require_relative "../lib/alarm_sound_model"
 require_relative "../lib/alarm_day_picker_row"
 require_relative "../lib/sound"
+require_relative "../lib/geo_info"
 
 MODEL_CHECKS = []
 
@@ -143,6 +144,30 @@ model_check("a day picker row's buttons toggle the stored days") do
   row.days[Utils::Weekdays::FRI] && changed
 end
 
+# GeoInfo#reverse_geocode_country is the one spot geocode-glib is actually
+# called. GeoInfo#seek's own rescue swallows everything below it, including a
+# bug that silently skipped reverse_geocode_country entirely -- a spy on
+# GeocodeGlib::Reverse.new is the only way to tell "the real gem ran and
+# failed" apart from "the real gem never ran". This also has no GeoClue2
+# D-Bus service to reach in this sandbox, so it is exercised directly rather
+# than through #seek (the drive run below exercises #seek's own use through
+# WorldFace).
+model_check("GeoInfo#reverse_geocode_country constructs a real GeocodeGlib::Location and calls GeocodeGlib::Reverse.new with it") do
+  constructed_with = nil
+  original_new = GeocodeGlib::Reverse.method(:new)
+  GeocodeGlib::Reverse.define_singleton_method(:new) do |location|
+    constructed_with = location
+    original_new.call(location)
+  end
+  begin
+    GeoInfo.new.send(:reverse_geocode_country, 51.5078, -0.1275)
+  ensure
+    GeocodeGlib::Reverse.define_singleton_method(:new, original_new)
+  end
+  constructed_with.is_a?(GeocodeGlib::Location) &&
+    constructed_with.latitude == 51.5078 && constructed_with.longitude == -0.1275
+end
+
 puts "-- alarm model layer (no display) --"
 MODEL_CHECKS.each do |description, ok|
   puts(ok ? "    ok   #{description}" : "    FAIL #{description}")
@@ -155,6 +180,27 @@ puts
 # Driving the window itself.
 # ---------------------------------------------------------------------------
 
+# WorldFace#build calls GeoInfo#seek automatically (upstream's
+# `use_geolocation`) whenever the `geolocation` setting is on, which is its
+# default. But GeoInfo#fix talks to a real org.freedesktop.GeoClue2 D-Bus
+# service that does not exist in this sandbox (or most CI boxes); #fix raises,
+# and #seek's own rescue swallows that before ever reaching
+# reverse_geocode_country -- so on an ordinary run here the geocode-glib call
+# inside WorldFace's live path never fires at all, and nothing would notice
+# if it were deleted. GeoClue2 itself has no Ruby binding to install (that is
+# exactly why ashpd was dropped rather than pressed into service for it), so
+# the only way to prove geocode-glib is reached from WorldFace's own,
+# un-mocked automatic-geolocation call -- not just from a method called
+# directly, as above -- is to stand in for the one missing piece, a
+# successful GeoClue2 fix, and watch.
+geo_reverse_calls = []
+GeoInfo.send(:define_method, :fix) { [51.5078, -0.1275] } # London
+geo_original_reverse_new = GeocodeGlib::Reverse.method(:new)
+GeocodeGlib::Reverse.define_singleton_method(:new) do |location|
+  geo_reverse_calls << location
+  geo_original_reverse_new.call(location)
+end
+
 GtkDriver.drive(GnomeClocks::Application.new, shots: SHOTS) do |d, app|
   d.window { app.window }
 
@@ -166,6 +212,25 @@ GtkDriver.drive(GnomeClocks::Application.new, shots: SHOTS) do |d, app|
     d.check("the World panel's empty state is showing") { app.window.panel(PanelId::WORLD).stack.visible_child_name == "empty" }
     d.check("the header bar offers the + button for World") { app.window.header_bar.button_mode == ButtonMode::NEW }
     d.shot("01-world-empty")
+  end
+
+  d.step("WorldFace's own automatic-geolocation path (not a direct call) reaches the real geocode-glib call") do
+    pump_until(2000) { geo_reverse_calls.any? }
+    d.check("GeocodeGlib::Reverse.new was really constructed from WorldFace#build's un-mocked use_geolocation, not skipped") { geo_reverse_calls.any? }
+    geo_reverse_calls.first.then do |location|
+      d.check("...built from a genuine GeocodeGlib::Location carrying our stand-in GeoClue2 fix") do
+        location.is_a?(GeocodeGlib::Location) && location.latitude == 51.5078 && location.longitude == -0.1275
+      end
+    end
+
+    # Our stand-in GeoClue2 fix may have let use_geolocation add a real
+    # automatic world clock (depending on whether GWeather's lookup matched
+    # it to a city). That is exactly the behaviour being proven, but the
+    # rest of this run exercises the manually-added-clock flow below with
+    # its own exact counts, so clear anything automatic back out now that
+    # the proof above has already seen it land.
+    world = app.window.panel(PanelId::WORLD)
+    world.locations.to_a.each { |item| world.locations.remove(item) if item.automatic }
   end
 
   d.step("the shortcuts dialog opens and closes") do
