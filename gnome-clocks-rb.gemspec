@@ -119,9 +119,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency("geocode-glib")
   spec.add_dependency("gnome_desktop")
 
-  # Alarm/world portal access (background activation, notifications).
-  spec.add_dependency("ashpd")
-
   # Dev, Test, & Release Tasks
   spec.add_development_dependency("kettle-dev", "~> 3.1", ">= 3.1.26")             # ruby >= 3.4
 

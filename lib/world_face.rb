@@ -8,6 +8,7 @@ require_relative 'widgets'
 require_relative 'world_item'
 require_relative 'world_row'
 require_relative 'world_location_dialog'
+require_relative 'geo_info'
 
 # WorldFace is the World panel: the empty state while there are no clocks,
 # and the sorted list of clocks once there are, each one ticking on the
@@ -21,10 +22,11 @@ require_relative 'world_location_dialog'
 # rebuilds the rows, for the reason TimerFace's class comment documents.
 #
 # Upstream also seeds the list with an automatic, geolocated entry through
-# Geo.Info, which wraps GeoClue2. Neither GeoClue2 nor the XDG location
-# portal has a Ruby binding available to this port (ashpd 0.1.1 ships no
-# Location portal), so that seeding is left out; every clock here is one the
-# person added by hand.
+# Geo.Info, which wraps GeoClue2. GeoInfo (lib/geo_info.rb) is this port's
+# equivalent; it is run once from an idle callback rather than upstream's
+# async `use_geolocation.begin`, since there is no coroutine to yield into
+# here. Like upstream, it is skipped entirely when the `geolocation` setting
+# is off.
 #
 class WorldFace < Adwaita::Bin
   include Clock
@@ -67,6 +69,7 @@ class WorldFace < Adwaita::Bin
 
       load
       refresh_rows
+      use_geolocation if @settings.geolocation?
 
       Utils::WallClock.default.on_tick { @locations.each(&:tick) }
     end
@@ -149,6 +152,21 @@ class WorldFace < Adwaita::Bin
 
     def same_place?(first, second)
       first.equal?(second) || (first.coords == second.coords && first.name.to_s == second.name.to_s)
+    end
+
+    # Upstream's `use_geolocation`: seeds the list with one automatic,
+    # geolocated clock. Run from an idle callback so GeoInfo's blocking
+    # D-Bus/network calls never delay the first frame.
+    def use_geolocation
+      GLib::Idle.add do
+        GeoInfo.new.seek.then do |location|
+          if location && !location_exists?(location)
+            @locations.add(WorldItem.new(location).tap { |item| item.automatic = true })
+            resort
+          end
+        end
+        false
+      end
     end
 
     def load
