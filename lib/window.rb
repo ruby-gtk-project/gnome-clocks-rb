@@ -145,20 +145,38 @@ class Window < Adwaita::ApplicationWindow
 
   # One instance per panel, built once and kept, so the panel keeps its state
   # while the user switches away from it and back.
+  #
+  # Every panel that persists anything (World and Timer, so far) is handed
+  # this window's own Settings instance rather than building a default one
+  # of its own. Settings#[]= rewrites the whole JSON file from its instance's
+  # in-memory copy, so two panels each holding a separate Settings object
+  # would each overwrite the other's key with its own stale snapshot on every
+  # save — World adding a clock would silently erase whatever Timer had just
+  # written, and vice versa.
   def panel(panel_id)
-    panels[panel_id] ||= PANELS.fetch(panel_id).last.new
+    panels[panel_id] ||= build_panel(PANELS.fetch(panel_id).last)
   end
 
   def panels = @panels ||= {}
 
   # Upstream's breakpoint: under 600sp the view switcher moves out of the
   # header bar and into the bottom bar.
+  #
+  # Only the first setter goes through Adw.Breakpoint's own add_setter:
+  # `switcher_bar` is a real Gtk::Widget with a GObject `reveal-child`-style
+  # boolean property add_setter can box into a GValue. `header_bar` is this
+  # port's own HeaderBar class, which has no GObject `title-widget` property
+  # of its own (only the plain Ruby accessor below) — add_setter asserts
+  # trying to box that, and a nil target would not box into a GValue either
+  # way. The swap happens by hand on apply/unapply instead, the way
+  # WorldStandalone's own breakpoint already works around the same gap.
   def narrow_breakpoint
     @narrow_breakpoint ||= Adwaita::Breakpoint.new(
       Adwaita::BreakpointCondition.parse(NARROW_CONDITION),
     ).tap do |breakpoint|
       breakpoint.add_setter(switcher_bar, 'reveal', true)
-      breakpoint.add_setter(header_bar, 'title-widget', nil)
+      breakpoint.signal_connect('apply') { header_bar.title_widget = nil }
+      breakpoint.signal_connect('unapply') { header_bar.title_widget = header_bar.view_switcher }
     end
   end
 
@@ -311,12 +329,16 @@ class Window < Adwaita::ApplicationWindow
     end
 
     def needs_attention(panel_id, value)
-      stack.page(panel(panel_id)).needs_attention = value
+      stack.get_page(panel(panel_id)).needs_attention = value
     end
 
     def close_standalone
       navigation_view.pop
       self
+    end
+
+    def build_panel(klass)
+      klass.instance_method(:initialize).parameters.any? { |_type, name| name == :settings } ? klass.new(settings: @settings) : klass.new
     end
 
     def restored_panel

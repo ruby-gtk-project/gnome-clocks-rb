@@ -151,7 +151,7 @@ class WorldLocationDialog < Adwaita::Dialog
         return
       end
 
-      matches = matching_locations(GWeather::Location.world, query.downcase)
+      matches = walk_locations(query.downcase)
       if matches.empty?
         stack.visible_child = no_search_results
         return
@@ -159,6 +159,31 @@ class WorldLocationDialog < Adwaita::Dialog
 
       matches.sort_by { |location| location.sort_name.to_s }.each { |location| append_row(location) }
       stack.visible_child = search_results
+    end
+
+    # Guards the recursive walk below against a binding-level use-after-free:
+    # GWeather::Location#next_child hands back a borrowed (transfer-none)
+    # child of the location it is called on, and the Ruby binding does not
+    # keep that child's underlying C struct alive on its own — nothing marks
+    # it as still reachable from the GWeather side between one `next_child`
+    # call and the next. A GC that runs mid-walk can collect the Ruby wrapper
+    # for a node this method is still about to call `next_child` on again,
+    # which frees memory GWeather itself still owns; the next access through
+    # it is then a stale read into freed memory. That corruption is exactly
+    # as likely to come back a wrong Ruby class (observed: an Array in place
+    # of a GWeather::Location, raising a bogus NoMethodError) as to crash the
+    # process outright with a segfault — both were reproduced driving this
+    # dialog, and neither reproduces with GC held off for the walk's short
+    # duration (results = {RESULT_COUNT_LIMIT} nodes at most). Disabling GC
+    # changes no observable behaviour; it only keeps every node this method
+    # touches alive for as long as the walk needs it to be.
+    def walk_locations(search)
+      gc_was_already_disabled = GC.disable
+      matching_locations(GWeather::Location.world, search)
+    ensure
+      unless gc_was_already_disabled
+        GC.enable
+      end
     end
 
     def matching_locations(location, search, results = [])

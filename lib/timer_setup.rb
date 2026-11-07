@@ -138,7 +138,7 @@ class TimerSetup < Gtk::Box
     @quick_start_buttons ||= QUICK_START.map do |minutes, label, accessible_name|
       Gtk::Button.new.tap do |button|
         button.action_name = 'timer-setup.start-timer'
-        button.action_target_value = GLib::Variant.new(minutes)
+        button.action_target_value = GLib::Variant.new(minutes, GLib::VariantType.new('i'))
         button.tooltip_text = accessible_name
         button.child = Gtk::Label.new(label)
       end
@@ -183,7 +183,10 @@ class TimerSetup < Gtk::Box
   def start_timer_action
     @start_timer_action ||= Gio::SimpleAction.new('start-timer', GLib::VariantType.new('i')).tap do |action|
       action.signal_connect('activate') do |_action, parameter|
-        parameter.value.then do |total_minutes|
+        # The Ruby binding hands a simple-typed ('i') action parameter back
+        # already unboxed to a plain Integer, not the GLib::Variant upstream's
+        # Vala sees.
+        parameter.then do |total_minutes|
           hours_spinbutton.value = total_minutes / 60
           minutes_spinbutton.value = total_minutes - ((total_minutes / 60) * 60)
           seconds_spinbutton.value = 0
