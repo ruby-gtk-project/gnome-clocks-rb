@@ -11,6 +11,13 @@ require_relative 'sound'
 # implements GListModel over a GLib.ListStore; this port keeps a plain Ruby
 # array instead, the way ContentStore in lib/widgets.rb does, and the sound
 # chooser enumerates it directly.
+#
+# The bundled files below are upstream's own data/sounds/alarms/*.flac,
+# copied in from origin/master (git ls-tree -r --name-only origin/master --
+# data/sounds/alarms) now that AlarmSetupDialog's sound chooser is the first
+# thing in this port to actually open them — an earlier round of this file
+# named them `.oga`, which built a Sound for a file that never existed on
+# disk, warning once per bundled sound every time this class was built.
 class AlarmSoundModel
   include Enumerable
 
@@ -46,16 +53,16 @@ class AlarmSoundModel
   # gem's lib directory, mirroring upstream's Config.DATADIR/sounds/gnome/default/alarms.
   def self.alarms_dir = File.expand_path('../data/sounds/alarms', __dir__)
 
-  def self.build_default_file = Gio::File.new_for_path(File.join(alarms_dir, 'toys.oga'))
+  def self.build_default_file = Gio::File.new_for_path(File.join(alarms_dir, 'toys.flac'))
 
   # Prior to 50 alarms only used the "alarm-clock-elapsed" sound; beep-beep
   # is the same sound without the forced repetition, and is the one shipped
   # outside the alarms directory so it always exists even without the rest.
-  def self.build_fallback_file = Gio::File.new_for_path(File.join(alarms_dir, 'beep-beep.oga'))
+  def self.build_fallback_file = Gio::File.new_for_path(File.join(alarms_dir, 'beep-beep.flac'))
 
   def initialize
     @sounds = [Sound.new(self.class.build_fallback_file, 'Beep-Beep')] +
-              NAMES.map { |file, label| Sound.new(Gio::File.new_for_path(File.join(self.class.alarms_dir, "#{file}.oga")), label) }
+              NAMES.map { |file, label| Sound.new(Gio::File.new_for_path(File.join(self.class.alarms_dir, "#{file}.flac")), label) }
     @sounds.sort_by!(&:label)
   end
 

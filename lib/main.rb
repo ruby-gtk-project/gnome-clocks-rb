@@ -19,6 +19,11 @@ require_relative 'sound'
 require_relative 'alarm_sound_model'
 require_relative 'alarm_item'
 require_relative 'alarm_day_picker_row'
+require_relative 'sound_chooser_row'
+require_relative 'sound_chooser'
+require_relative 'alarm_row'
+require_relative 'alarm_setup_dialog'
+require_relative 'alarm_face'
 require_relative 'window'
 require_relative 'gnome/clocks/rb/version'
 
@@ -28,7 +33,7 @@ require_relative 'gnome/clocks/rb/version'
 #
 # Ported from upstream's src/main.vala and src/application.vala.
 #
-# Three things upstream's Application does are not here:
+# Two things upstream's Application does are not here:
 #
 #   * Adw.Application is broken in the Ruby bindings, so the application
 #     object is a Gtk::Application; every Adwaita widget still works inside
@@ -36,8 +41,12 @@ require_relative 'gnome/clocks/rb/version'
 #   * dbus_register exports a search provider and the Shell's world clocks on
 #     the session bus, which arrive with the World panel they serve;
 #   * add-location deserializes a GWeather.Location out of a variant, which
-#     also belongs to the World panel, as do its stop-alarm and snooze-alarm
-#     actions, which exist for the buttons on an alarm's notification.
+#     also belongs to the World panel.
+#
+# `stop-alarm` and `snooze-alarm`, upstream's other two actions, exist here —
+# AlarmFace installs them (see lib/alarm_face.rb) rather than this class,
+# since they are stringly-typed on an alarm id and have nothing to do until
+# the Alarm panel's own ContentStore exists to look an id up in.
 #
 class App
   APP_ID = 'org.rubygtkproject.GnomeClocks'

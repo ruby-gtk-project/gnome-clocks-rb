@@ -6,6 +6,7 @@ require_relative 'settings'
 require_relative 'utils'
 require_relative 'header_bar'
 require_relative 'shortcuts_dialog'
+require_relative 'alarm_face'
 require_relative 'stopwatch_face'
 require_relative 'timer_face'
 require_relative 'world_face'
@@ -17,7 +18,6 @@ require_relative 'world_standalone'
 #
 # Ported from Clocks.Window in src/window.vala and data/ui/window.ui.
 #
-# The panels it hosts are the ones this port has: World, Stopwatch and Timer.
 # The panel list is a constant, so a panel arriving later is added in one
 # place, and everything keyed off it — the view stack pages, the Alt+N
 # accelerators, the shortcuts dialog's sections, navigate-forward and the
@@ -40,6 +40,7 @@ class Window < Adwaita::ApplicationWindow
   # icon.
   PANELS = {
     PanelId::WORLD     => ['_World', 'world-clocks-symbolic', WorldFace],
+    PanelId::ALARM     => ['_Alarm', 'alarm-symbolic', AlarmFace],
     PanelId::STOPWATCH => ['_Stopwatch', 'stopwatch-symbolic', StopwatchFace],
     PanelId::TIMER     => ['_Timer', 'timer-symbolic', TimerFace],
   }.freeze

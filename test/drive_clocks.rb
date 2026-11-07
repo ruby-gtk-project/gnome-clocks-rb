@@ -1,15 +1,15 @@
 # frozen_string_literal: true
 
 # Drives the whole app headlessly: builds the window, switches between every
-# panel it has (World, Stopwatch, Timer), opens every dialog (add-location,
-# new-timer, shortcuts, about), fires the window's actions and the per-panel
-# controls, hits the empty and populated states, and screenshots each one.
+# panel it has (World, Alarm, Stopwatch, Timer), opens every dialog
+# (add-location, new-alarm, new-timer, shortcuts, about), fires the window's
+# actions and the per-panel controls, hits the empty and populated states, and
+# screenshots each one.
 #
 # It also smoke-tests the alarm model layer (AlarmItem, AlarmSoundModel,
-# AlarmDayPickerRow, Sound) on its own: nothing in the window wires it up yet
-# (see .reports/component-inventory.md — the Alarm panel itself is unported),
-# so there is no widget to drive it through, but a round trip through the
-# model is still worth proving.
+# AlarmDayPickerRow, Sound) on its own before the widget run starts, since a
+# round trip through the model alone is worth proving independently of the
+# panel that now wires it up.
 #
 # Run it from the repository root:
 #
@@ -371,7 +371,71 @@ GtkDriver.drive(GnomeClocks::Application.new, shots: SHOTS) do |d, app|
 
   # --- Panel switching: Ctrl+Alt+PageDown / PageUp -------------------------
 
-  d.step("win.navigate-forward moves World -> Stopwatch") do
+  d.step("win.navigate-forward moves World -> Alarm") do
+    app.window.activate_action("navigate-forward", nil)
+  end
+
+  d.step("the Alarm panel's empty state is showing") do
+    alarm_face = app.window.panel(PanelId::ALARM)
+    d.check("the stack is on alarm") { app.window.stack.visible_child_name == "alarm" }
+    d.check("the empty state is showing") { alarm_face.stack.visible_child_name == "empty" }
+    d.check("the header bar offers the + button for Alarm") { app.window.header_bar.button_mode == ButtonMode::NEW }
+    d.shot("10-alarm-empty")
+  end
+
+  # --- Alarm panel: add, edit, delete ---------------------------------------
+
+  d.step("win.new opens the New Alarm dialog") do
+    app.window.activate_action("new", nil)
+  end
+
+  d.step("the dialog starts from the wall clock's current time") do
+    dialog = app.window.visible_dialog
+    d.check("a dialog is showing") { !dialog.nil? }
+    @alarm_dialog = dialog
+    d.shot("11-alarm-new")
+  end
+
+  d.step("naming the alarm and setting a repeat day avoids the duplicate banner") do
+    @alarm_dialog.name_entry.text = "Wake up"
+    @alarm_dialog.repeats.buttons[Utils::Weekdays::MON].active = true
+  end
+
+  d.step("Add creates the alarm and closes the dialog") do
+    @alarm_dialog.add_button.signal_emit("clicked")
+    pump_until(2000) { app.window.visible_dialog.nil? }
+  end
+
+  d.step("the new alarm is listed, active, and on disk") do
+    alarm_face = app.window.panel(PanelId::ALARM)
+    d.check("the list page is showing now") { alarm_face.stack.visible_child_name == "list" }
+    d.check("one row in the list box") { alarm_face.listbox.first_child != nil }
+    d.check("one alarm is stored") { app.window.settings.alarms.length == 1 }
+    d.check("the alarm is active") { alarm_face.alarms.get_item(0).active? }
+    d.check("the alarm's name round-tripped") { alarm_face.alarms.get_item(0).name == "Wake up" }
+    d.shot("12-alarm-one-added")
+  end
+
+  d.step("the row's switch reflects and controls the alarm's active state") do
+    row = app.window.panel(PanelId::ALARM).listbox.first_child
+    row.toggle_switch.active = false
+    d.check("turning the switch off deactivates the alarm") { !app.window.panel(PanelId::ALARM).alarms.get_item(0).active? }
+    row.toggle_switch.active = true
+  end
+
+  d.step("the row's delete button removes the alarm") do
+    app.window.panel(PanelId::ALARM).listbox.first_child.delete_button.signal_emit("clicked")
+  end
+
+  d.step("the Alarm panel is empty again") do
+    alarm_face = app.window.panel(PanelId::ALARM)
+    d.check("no alarms left") { alarm_face.alarms.n_items.zero? }
+    d.check("the empty state is showing") { alarm_face.stack.visible_child_name == "empty" }
+    d.check("nothing left on disk") { app.window.settings.alarms.empty? }
+    d.shot("13-alarm-empty-again")
+  end
+
+  d.step("win.navigate-forward moves Alarm -> Stopwatch") do
     app.window.activate_action("navigate-forward", nil)
   end
 
@@ -534,12 +598,14 @@ GtkDriver.drive(GnomeClocks::Application.new, shots: SHOTS) do |d, app|
   d.step("the window is empty across every panel again") do
     d.check("no timers") { app.window.panel(PanelId::TIMER).timers.n_items.zero? }
     d.check("no world clocks") { app.window.panel(PanelId::WORLD).locations.n_items.zero? }
+    d.check("no alarms") { app.window.panel(PanelId::ALARM).alarms.n_items.zero? }
     d.check("stopwatch is reset") { app.window.panel(PanelId::STOPWATCH).state == StopwatchFace::RESET }
   end
 
   # --- Back to World, and window-close behaviour ----------------------------
 
-  d.step("win.navigate-backward moves Timer -> Stopwatch -> World (two steps)") do
+  d.step("win.navigate-backward moves Timer -> Stopwatch -> Alarm -> World (three steps)") do
+    app.window.activate_action("navigate-backward", nil)
     app.window.activate_action("navigate-backward", nil)
     app.window.activate_action("navigate-backward", nil)
   end
