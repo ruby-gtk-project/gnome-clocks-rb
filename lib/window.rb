@@ -7,6 +7,7 @@ require_relative 'utils'
 require_relative 'header_bar'
 require_relative 'shortcuts_dialog'
 require_relative 'alarm_face'
+require_relative 'alarm_ringing_panel'
 require_relative 'stopwatch_face'
 require_relative 'timer_face'
 require_relative 'world_face'
@@ -99,6 +100,8 @@ class Window < Adwaita::ApplicationWindow
       window.signal_connect('notify::is-active') { on_window_active }
       window.signal_connect('close-request') { save_window_state.then { false } }
 
+      alarm_ringing_panel.on_dismiss { alarm_dismissed }
+
       install_actions
       watch_panels
 
@@ -132,6 +135,19 @@ class Window < Adwaita::ApplicationWindow
 
   def main_page = @main_page ||= Adwaita::NavigationPage.new(main_toolbar_view, 'Clocks')
   def main_toolbar_view = @main_toolbar_view ||= Adwaita::ToolbarView.new
+
+  def alarm_ringing_panel = @alarm_ringing_panel ||= AlarmRingingPanel.new.tap(&:build)
+
+  # Upstream's alarm_subpage: `can-pop` false, so only `#dismiss` (via the
+  # stop/snooze actions settling the alarm's state) can leave it — the
+  # window stays non-closable for as long as it is the visible page, through
+  # the same `deletable` check #visible_page_changed already applies to
+  # every other subpage.
+  def alarm_subpage
+    @alarm_subpage ||= Adwaita::NavigationPage.new(alarm_ringing_panel, 'Alarm Ringing').tap do |page|
+      page.can_pop = false
+    end
+  end
 
   def stack
     @stack ||= Adwaita::ViewStack.new.tap do |view_stack|
@@ -311,6 +327,7 @@ class Window < Adwaita::ApplicationWindow
     # stopwatch runs or its timer counts down.
     def watch_panels
       panel(PanelId::WORLD).on_show_standalone { |item| push_standalone(item) }
+      panel(PanelId::ALARM).on_ring { |alarm| ring_alarm(alarm) }
       panel(PanelId::STOPWATCH).on_state_changed do |state|
         needs_attention(PanelId::STOPWATCH, state == StopwatchFace::RUNNING)
       end
@@ -334,6 +351,24 @@ class Window < Adwaita::ApplicationWindow
     end
 
     def close_standalone
+      navigation_view.pop
+      self
+    end
+
+    # Upstream's `alarm.ring` handler: back out of any standalone subpage,
+    # show the Alarm panel underneath, and push the full-screen ringing page
+    # with this alarm wired to it.
+    def ring_alarm(alarm)
+      close_standalone if navigation_view.visible_page != main_page
+      stack.visible_child_name = PanelId::ALARM.to_s
+      alarm_ringing_panel.alarm = alarm
+      navigation_view.push(alarm_subpage)
+      self
+    end
+
+    # Upstream's alarm_dismissed GtkCallback: the ringing page's own
+    # `dismiss` signal pops it back off the navigation view.
+    def alarm_dismissed
       navigation_view.pop
       self
     end

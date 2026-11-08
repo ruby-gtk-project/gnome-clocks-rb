@@ -201,10 +201,24 @@ GeocodeGlib::Reverse.define_singleton_method(:new) do |location|
   geo_original_reverse_new.call(location)
 end
 
+# Captures every notification id/Gio::Notification pair that reaches the
+# real Gio::Application#send_notification (App#send_notification's wrapped
+# target), without stopping it from actually running — there is no
+# notification daemon in this sandbox to receive it, but the call going
+# through at all, with a real Gio::Notification, is what proves AlarmFace's
+# ring handling reached it rather than, say, raising into some rescue.
+notification_calls = []
+
 GtkDriver.drive(GnomeClocks::Application.new, shots: SHOTS) do |d, app|
   d.window { app.window }
 
   d.step("the window builds with the World panel showing") do
+    real_send_notification = app.app.method(:send_notification)
+    app.app.define_singleton_method(:send_notification) do |notification_id, notification|
+      notification_calls << [notification_id, notification]
+      real_send_notification.call(notification_id, notification)
+    end
+
     d.check("the window is an Adwaita::ApplicationWindow") { app.window.is_a?(Adwaita::ApplicationWindow) }
     d.check("it is the only toplevel") { Gtk::Window.list_toplevels.length == 1 }
     d.check("its title is Clocks") { app.window.title == "Clocks" }
@@ -414,6 +428,88 @@ GtkDriver.drive(GnomeClocks::Application.new, shots: SHOTS) do |d, app|
     d.check("the alarm is active") { alarm_face.alarms.get_item(0).active? }
     d.check("the alarm's name round-tripped") { alarm_face.alarms.get_item(0).name == "Wake up" }
     d.shot("12-alarm-one-added")
+  end
+
+  # --- Alarm panel: ringing, snooze, stop, and the full-screen panel -------
+
+  d.step("pushing an alarm's ring time into the past and ticking the real wall clock drives it to RINGING") do
+    alarm_face = app.window.panel(PanelId::ALARM)
+    alarm = alarm_face.alarms.get_item(0)
+    @ringing_alarm = alarm
+    alarm.load_ring_time(Time.now - 1)
+    # The same wall-clock tick AlarmFace#build wired up in #on_tick, not a
+    # direct call to the private #tick/#ring methods — this is the real path
+    # a system alarm clock reaches RINGING through.
+    Utils::WallClock.default.tick
+    d.check("the alarm's own state advanced to RINGING") { alarm.state == AlarmItem::RINGING }
+    d.check("a real Gio::Notification reached app.app.send_notification, not skipped or mocked away") do
+      notification_calls.any? { |notification_id, notification| notification_id == "alarm-#{alarm.id}" && notification.is_a?(Gio::Notification) }
+    end
+    d.check("the window pushed the full-screen ringing page") { app.window.navigation_view.visible_page.equal?(app.window.alarm_subpage) }
+    d.check("the ringing panel is wired to this alarm") { app.window.alarm_ringing_panel.alarm.equal?(alarm) }
+    d.check("the ringing panel shows the alarm's name") { app.window.alarm_ringing_panel.title_label.label == "Wake up" }
+    d.check("the window is non-deletable while the ringing page is up") { !app.window.deletable? }
+  end
+
+  d.step("the ringing page is on screen") do
+    pump(200)
+    d.shot("12a-alarm-ringing")
+  end
+
+  d.step("app.snooze-alarm, activated the way the ringing page's Snooze button and a notification action both would, snoozes it and dismisses the page") do
+    app.app.activate_action("snooze-alarm", GLib::Variant.new(@ringing_alarm.id))
+    d.check("the alarm is now snoozing") { @ringing_alarm.state == AlarmItem::SNOOZING }
+    d.check("the ringing page popped itself back off, via AlarmRingingPanel#dismiss") { app.window.navigation_view.visible_page.equal?(app.window.main_page) }
+    d.check("the window is deletable again") { app.window.deletable? }
+  end
+
+  d.step("rung again and stopped with app.stop-alarm") do
+    @ringing_alarm.load_ring_time(Time.now - 1)
+    Utils::WallClock.default.tick
+    d.check("ringing again") { @ringing_alarm.state == AlarmItem::RINGING }
+    d.check("the ringing page is back up") { app.window.navigation_view.visible_page.equal?(app.window.alarm_subpage) }
+
+    app.app.activate_action("stop-alarm", GLib::Variant.new(@ringing_alarm.id))
+    d.check("stopping clears the state back to READY") { @ringing_alarm.state == AlarmItem::READY }
+    d.check("the ringing page popped itself back off") { app.window.navigation_view.visible_page.equal?(app.window.main_page) }
+    d.check("a repeating alarm re-arms itself for its next day") { @ringing_alarm.active? }
+  end
+
+  # --- Alarm panel: the sound chooser and its bell preview -----------------
+
+  d.step("activating the alarm row opens its edit dialog") do
+    alarm_face = app.window.panel(PanelId::ALARM)
+    alarm_face.listbox.signal_emit("row-activated", alarm_face.listbox.first_child)
+    dialog = app.window.visible_dialog
+    d.check("the edit dialog is showing") { !dialog.nil? }
+    @sound_dialog = dialog
+  end
+
+  d.step("navigating to the Alarm Sound page and activating a row previews a real bell") do
+    @sound_dialog.navigation_view.push_by_tag("sound-chooser")
+    chooser = @sound_dialog.sound_chooser
+    sound_item = chooser.instance_variable_get(:@model).first
+    row = chooser.send(:row_for, sound_item)
+    row.signal_emit("activated")
+    @sound_chooser = chooser
+    @sound_chooser_sound_item = sound_item
+    @sound_chooser_row = row
+    d.check("the chooser's sound is now the previewed one") { chooser.sound == sound_item }
+    d.check("a real Utils::Bell was told to ring, not stubbed out") { chooser.instance_variable_get(:@bell).is_a?(Utils::Bell) }
+    d.check("the row shows itself ringing") { row.ringing? }
+  end
+
+  d.step("the sound chooser's preview is on screen") do
+    d.shot("12b-sound-chooser-preview")
+    @sound_chooser.stop_preview
+    @sound_dialog.navigation_view.pop
+  end
+
+  d.step("cancelling the edit dialog leaves the alarm as it was") do
+    @sound_dialog.cancel_button.signal_emit("clicked")
+    pump_until(2000) { app.window.visible_dialog.nil? }
+    d.check("the dialog closed") { app.window.visible_dialog.nil? }
+    d.check("still one alarm, untouched") { app.window.panel(PanelId::ALARM).alarms.n_items == 1 }
   end
 
   d.step("the row's switch reflects and controls the alarm's active state") do

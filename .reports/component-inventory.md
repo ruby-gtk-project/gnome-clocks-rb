@@ -1,3 +1,12 @@
+> **Superseded by `component-identification.md` as of commit 6e26ec6 and
+> later.** The Alarm panel's widgets (alarm-face, alarm-row,
+> alarm-setup-dialog, sound-chooser/-row) this document still lists as
+> MISSING below were ported in commit `834969c`, and the ring-handling gap
+> this document does not mention at all (no `alarm-ringing-panel` entry) was
+> closed afterward. Read `component-identification.md` for the current
+> state; this file is kept for its upstream-file-by-file survey structure,
+> not for its present/missing verdicts.
+
 # gnome-clocks-rb — upstream component inventory
 
 Survey of upstream `gnome-clocks` (GNOME/gnome-clocks `master`, read via

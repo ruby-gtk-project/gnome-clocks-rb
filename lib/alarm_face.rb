@@ -23,9 +23,10 @@ require_relative 'alarm_setup_dialog'
 # documents.
 #
 # Upstream's `app.stop-alarm`/`app.snooze-alarm` actions, fired by the
-# notification's own buttons, are installed here rather than on the
-# application object, since they have nothing to do until this panel's
-# ContentStore exists for them to look an alarm id up in.
+# notification's own buttons (and, now, by AlarmRingingPanel's stop/snooze
+# buttons), are installed here rather than on the application object, since
+# they have nothing to do until this panel's ContentStore exists for them to
+# look an alarm id up in.
 class AlarmFace < Adwaita::Bin
   include Clock
 
@@ -43,6 +44,13 @@ class AlarmFace < Adwaita::Bin
 
   # Translators: Tooltip for the + button
   def new_label = 'New Alarm'
+
+  # Upstream's `ring` signal: the window listens for this to push the
+  # full-screen ringing panel over itself.
+  def on_ring(&block)
+    @on_ring = block
+    self
+  end
 
   def build
     tap do |face|
@@ -258,15 +266,27 @@ class AlarmFace < Adwaita::Bin
 
     def ring(alarm)
       application.then { |app| app.send_notification("alarm-#{alarm.id}", notification_for(alarm)) if app }
+      @on_ring&.call(alarm)
       self
     end
 
+    # Upstream's add_button_with_target_value: the Ruby binding's
+    # #add_button_with_target is the C side's variadic
+    # g_notification_add_button_with_target, where the third argument is a
+    # GVariant *format string* consumed together with trailing value
+    # arguments, not a value by itself. Calling it with the plain alarm id
+    # (as a two-argument-shaped call squeezed into three) reads a vararg
+    # that was never passed and segfaults the whole process — this is
+    # exactly the crash the alarm's `ring` path never surfaced before
+    # nothing drove an alarm to RINGING. #add_button's plain detailed-action
+    # string form, with the id already rendered as GVariant text by
+    # `GLib::Variant#to_s`, reaches the same action+target the safe way.
     def notification_for(alarm)
       Gio::Notification.new(alarm.name.to_s.empty? ? 'Alarm' : alarm.name).tap do |message|
         message.body = alarm.time_label
         message.priority = :urgent
-        message.add_button_with_target('Stop', 'app.stop-alarm', alarm.id)
-        message.add_button_with_target('Snooze', 'app.snooze-alarm', alarm.id)
+        message.add_button('Stop', "app.stop-alarm(#{GLib::Variant.new(alarm.id)})")
+        message.add_button('Snooze', "app.snooze-alarm(#{GLib::Variant.new(alarm.id)})")
       end
     end
 end

@@ -32,6 +32,13 @@
           libgweather
           libsoup_3
           json-glib
+          # Gtk::MediaFile (lib/utils.rb's Bell, behind AlarmItem's ring and
+          # SoundChooser's preview) plays through GStreamer's playbin3,
+          # which needs both the base plugin set (playback itself) and the
+          # good set (the flac decoder the bundled alarm sounds need).
+          gst_all_1.gstreamer
+          gst_all_1.gst-plugins-base
+          gst_all_1.gst-plugins-good
         ]
         # The Ruby `pkg-config` gem resolves `Requires.private` transitively and
         # hard-fails if any .pc in the chain is missing, so gtk4's whole private
@@ -101,6 +108,14 @@
         # `.out`. at-spi2-core is here for the Atk typelib.
         typelibPath = pkgs.lib.makeSearchPath "lib/girepository-1.0"
           (map (drv: drv.out or drv) (gtkStack ++ [ pkgs.at-spi2-core ]));
+
+        # GStreamer finds its elements (playbin3, the flac decoder, …) by
+        # scanning this path rather than through pkg-config/typelibs.
+        gstPluginPath = pkgs.lib.makeSearchPath "lib/gstreamer-1.0" (map (drv: drv.out or drv) [
+          pkgs.gst_all_1.gstreamer
+          pkgs.gst_all_1.gst-plugins-base
+          pkgs.gst_all_1.gst-plugins-good
+        ]);
 
         # nix/ and not the repo root: the root Gemfile is kettle-jem's
         # development bundle — rubocop, rspec, yard, the kettle-dev stack — and
@@ -173,6 +188,7 @@
               --add-flags "-I$out/share/gnome-clocks/lib" \
               --add-flags "$out/share/gnome-clocks/exe/${launcher}" \
               --set GI_TYPELIB_PATH "${typelibPath}" \
+              --set GST_PLUGIN_SYSTEM_PATH_1_0 "${gstPluginPath}" \
               --prefix XDG_DATA_DIRS : "$out/share" \
               --prefix XDG_DATA_DIRS : "$out/share/gsettings-schemas/gnome-clocks-0.1.0" \
               --prefix XDG_DATA_DIRS : "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}" \
@@ -221,6 +237,7 @@
           shellHook = ''
             export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk4}/share/gsettings-schemas/${pkgs.gtk4.name}:${pkgs.libgweather}/share/gsettings-schemas/${pkgs.libgweather.name}:${pkgs.adwaita-icon-theme}/share:$XDG_DATA_DIRS"
             export GI_TYPELIB_PATH="${typelibPath}''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+            export GST_PLUGIN_SYSTEM_PATH_1_0="${gstPluginPath}''${GST_PLUGIN_SYSTEM_PATH_1_0:+:$GST_PLUGIN_SYSTEM_PATH_1_0}"
             export RUBYLIB="$PWD/lib''${RUBYLIB:+:$RUBYLIB}"
             [ -d data/schemas ] && export GSETTINGS_SCHEMA_DIR="$PWD/data/schemas"
             unset BUNDLE_GEMFILE BUNDLE_FROZEN
