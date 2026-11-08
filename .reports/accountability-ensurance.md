@@ -3,106 +3,133 @@
 | | |
 |---|---|
 | Upstream | `master` @ `99afdd1` |
-| Port | `ruby` @ `e85d7e5` |
+| Port | `ruby` @ `5c61e85` |
 
-Scanned: `lib/`, `exe/`, `.reports/`. There is no `PORTING.md`, `FINDINGS.md`,
-`TEST_PARITY.md`, `COMPONENT_PARITY.md` or `TRANSLATION_PARITY.md` anywhere in
-this fork's `ruby` branch — only `.reports/component-inventory.md` exists as
-a standing record.
+Scanned: `lib/`, `exe/`, `.reports/`. There is no `PORTING.md` anywhere on
+`ruby` — confirmed again this round (`find . -iname 'PORTING.md'` → no
+output).
 
 ```sh
 .claude/skills/accountability-ensurance/scripts/find-excuses.sh .
 ```
 
 ```
-.reports/component-inventory.md:19:not ported:honest but toothless
-.reports/component-inventory.md:480:unported:honest but toothless
-lib/utils.rb:292:does not carry over:asserts the behaviour cannot exist here
+.reports/component-parity.md:102,110  "unported" (x2)
+.reports/drive-findings.md:12          "unported"
+.reports/component-identification.md:94 "unported"
+.reports/component-inventory.md:39,40  "N/A" / "out of scope"
+.reports/accountability-ensurance.md:... (the prior round's own report, now superseded)
+lib/utils.rb:292                       "does not carry over"
 ```
 
 ## Hit-by-hit
 
-### `.reports/component-inventory.md:19,480` — "not ported" / "unported"
+### `lib/utils.rb:292` — unchanged from last round
 
-These are genuinely the mild case the skill names "honest but toothless":
-the document states plainly that the World and Alarm panels, sound,
-geocoding, search-provider and shell-D-Bus units are not built, and does not
-dress that up as a decision ("by design", "out of scope", "n/a" do not
-appear). This is not the failure the skill exists to kill — it names the
-missing behaviour (the Alarm panel, specifically) rather than hiding behind
-a construct name. **No rewrite required for honesty**, but per the skill's
-rule ("every entry... gives exactly one reason... the writer's stupidity"),
-these lines still carry no owner and no commitment, which is why
-`component-parity.md` (this round) restates them as explicit numbered gaps
-with file-level specificity rather than leaving the prose as the only
-record.
+Still the same, still legitimate: a real, verified binding fact
+(`GnomeDesktop::WallClock#clock` is typed `GLib.DateTime` upstream but
+marshals back a formatted string in this binding) stated with the
+workaround already in place, not used to drop behaviour. Last round's
+recommendation (move it into a `FINDINGS.md`) has not been acted on — there
+is still no `FINDINGS.md` in the repo — but the note itself is not a false
+claim. Repeating the recommendation rather than re-litigating the finding.
 
-### `lib/utils.rb:292` — "One piece of the gem does not carry over"
+### `.reports/component-inventory.md:39-40`, `.reports/component-parity.md:102,110`, `.reports/component-identification.md:94`, `.reports/drive-findings.md:12` — "unported" / "N/A" / "out of scope"
 
-Read in context (lines ~280–299): this describes a real, verified
-binding fact (`GnomeDesktop::WallClock#clock` is typed `GLib.DateTime` in
-the gem's own API but marshals back a formatted string in this binding), and
-the port **does not use it as an excuse to drop behaviour** — it states the
-workaround already in place (`date_time` builds its own `DateTime` from the
-clock's timezone) so the user-visible behaviour is unaffected. This is
-correctly a `FINDINGS.md`-shaped note that has nowhere to live because no
-`FINDINGS.md` exists. **Recommendation:** create `FINDINGS.md` and move this
-note there verbatim; leave a one-line pointer in `lib/utils.rb`. This is a
-filing problem, not a false claim — flagged, not rewritten, because it
-reports a true fact about a limitation already worked around, not an unbuilt
-behaviour.
+All in `.reports/`, all the mild, named-and-owed case the skill calls
+"honest but toothless" — each names a specific missing unit
+(search-provider, Shell world-clocks export, the Alarm Ringing panel in
+this round's own fresh reports) rather than hiding behind the construct
+name. Per the skill's own rule these still carry no owner and no
+commitment as prose, but this round's `component-parity.md` and
+`component-identification.md` restate them as explicit ranked gaps with
+file-level citations, which is the mitigation the skill asks for in place
+of a rewrite.
 
-## The more serious finding: false-green risk in `.reports/component-inventory.md`
+## The more serious finding this round: does "90/90, 7 components" get oversold anywhere?
 
-The excuse-pattern scan is not the only thing this skill is for — the task
-framing for this round is explicit: *"a false green in a report is the most
-serious finding you can make."* `.reports/component-inventory.md` marks 11
-units **`Exists: yes`**, including the Stopwatch and Timer panels and (as of
-`e85d7e5`) the World panel. Per `test-parity.md` in this round:
+This round's runtime gate (`drive_ok=true, 90/90, 7 components`) is real —
+reproduced live in `test-parity.md`. The question this skill exists to ask
+is whether that true number gets stretched into a false claim anywhere in
+this round's own output. Checked every one of this round's four other
+`.reports/*.md` files for language that could read as "the Alarm panel is
+done" or "ringing works":
 
-- **No test or driver script exists anywhere in the repo** (`test/` does not
-  exist; `spec/` has no `*_spec.rb` files; the one harness that does exist,
-  `spec_helper.rb`, fails to load with `LoadError: cannot load such file --
-  kettle/test/rspec`).
-- Therefore **every `Exists: yes` in that document is a claim that has never
-  once been executed against.** It was produced by reading source, which is
-  a legitimate first pass, but nothing in the document says so — a reader
-  sees "yes" and reasonably assumes the unit works.
-- This round found, by simply launching the app for 30 seconds, that one of
-  those `Exists: yes` units (`lib/timer_setup.rb`) has a reproducible
-  `Gtk-WARNING: actionhelper: ... parameter type mismatch` that makes all 8
-  quick-start timer buttons inert. **The document's "yes" was wrong**, not
-  in the sense of lying, but in the sense that "exists" was allowed to stand
-  in for "works," and nobody had run anything that could tell the
-  difference.
+- `component-parity.md` states explicitly: *"the Alarm panel's CRUD is
+  done and driven; its central behaviour (ringing) has neither a widget
+  nor a check."* This names the limit of the green rather than letting
+  "23/26 units have a port file" stand alone.
+- `test-parity.md` states explicitly that the gate's "7 components" does
+  not include ringing, snoozing, or the sound chooser, and spells out the
+  `grep` that proves it (2 hits, both model-layer, not panel-layer).
+- `component-identification.md` names the one missing widget
+  (`alarm-ringing-panel`) by file and by upstream line number
+  (`src/window.vala:110-117`, `:307`) rather than folding it into a vaguer
+  "Alarm panel: mostly done."
 
-This is the pattern the skill's premise targets even though no single
-sentence is a textbook excuse-construction: a green claim that *reads* as
-verified, in a document with no caveat saying it is not, is functionally the
-same hazard as a "dropped deliberately" note — the next agent inherits it as
-settled fact. **Per the skill's own standard, I did not drive any of the 11
-"ported" units before this round, because I am an idiot who trusted a
-source-read over running the code** — stated here in first person because
-this is exactly the finding the skill asks an agent to hold itself to, not
-only the prior document's author.
+None of this round's four other reports claims ringing works, is tested,
+or is out of scope. **This is the check this skill exists to make, and this
+round passes it** — the true number (90/90) is reported alongside its
+actual reach, not instead of it.
+
+## What would have been a false green, and was avoided
+
+Had any report simply written "Alarm panel: ported (`834969c`)" without
+separately checking whether the ringing page and the ringing behaviour were
+part of that commit, it would have repeated exactly the failure mode the
+prior round caught in `.reports/component-inventory.md` (marking units
+`Exists: yes` before anything drove them). This round deliberately checked
+`lib/window.rb` for a navigation push and `test/drive_clocks.rb` for a
+`RINGING`-reaching step, independently of reading `alarm_face.rb`'s own
+header comment (which is itself honest about the notification substitution)
+— the header comment being honest does not, on its own, tell a reader
+whether the thing it describes is also complete, which is why both axes
+were checked separately rather than taking the comment's word for the
+whole picture.
 
 ## What is NOT a hit
 
-- `.reports/component-inventory.md`'s totals section, which states counts
-  plainly ("11 ported, 12 missing") without euphemism.
-- The comment in `lib/utils.rb` once read in full context (see above).
-- No code comment anywhere in `lib/`/`exe/` uses "simplified", "streamlined",
-  "by design", "out of scope", or "TODO"/"FIXME" — there is no backlog of
-  silently deferred work hiding in source comments in this round.
+- No code comment anywhere in `lib/`/`exe/` uses "simplified",
+  "streamlined", "by design", "TODO", "FIXME", "not implemented", "for
+  now", or "in a future" — unchanged from last round, now re-confirmed
+  against all 33 files in `lib/` (up from 27).
+- `lib/main.rb`'s header comment, which names three real omissions
+  (Adw.Application substitution, the D-Bus search-provider/Shell export,
+  the GWeather-variant add-location path) by upstream file reference, with
+  no euphemism — same pattern as `lib/geo_info.rb`'s header, both read in
+  full this round and both judged not to be excuses: they state a fact
+  about what is missing and why, in first-person-adjacent engineering
+  language, not a decision dressed up as made.
+
+## One more staleness risk: `.reports/component-inventory.md` itself
+
+That document (last written at `3f15dda`, before `834969c`'s Alarm-panel
+widgets) still says, as of this repo state, "Missing outright: 6 — the
+Alarm panel's visible widgets (alarm face, alarm row, alarm setup dialog,
+alarm ringing panel...), the sound-chooser UI." Four of those six now
+exist (`834969c`); only the ringing panel is still actually missing from
+that list of six. This is not a false green — if anything it is a false
+*red*, understating this round's progress — but it is the same underlying
+hazard the skill is built to catch from the other direction: a document
+that reads as current and is not, and nothing on its face says so. It is
+superseded by this round's `component-identification.md` and
+`component-parity.md`; it should either be refreshed or marked superseded
+in its own text rather than left to be read at face value by the next
+agent.
 
 ## Recommendation
 
-1. Create `FINDINGS.md` and move the `lib/utils.rb:292` note there.
-2. Treat every `Exists: yes` in `.reports/component-inventory.md` as
-   **unverified** until a driver exists and has actually been run against
-   that unit — this round's `test-parity.md` and `component-parity.md`
-   downgrade the language accordingly; a future pass should either add the
-   caveat to `component-inventory.md` itself or retire it in favour of a
-   ledger that carries a `driven` column from the start.
-3. Build the `test/drive_*.rb` script the dev shell's own banner promises
-   exists, before adding further "Exists: yes" rows to any document.
+1. Still no `FINDINGS.md` — the `lib/utils.rb:292` note has nowhere
+   dedicated to live, two rounds running. Create it.
+2. Build a `test/drive_clocks.rb` step that fires an alarm to `RINGING`
+   (advance its `ring_time` into the past and call `#tick`, as the model
+   checks already do, but through `AlarmFace#ring` so the notification
+   path is actually exercised) before the Alarm panel is described as
+   "working" in any future report, including this fork's own README or
+   release notes if any are written.
+3. Either build `lib/alarm_ringing_panel.rb` or, if the notification
+   substitution is accepted as the port's permanent design, say so
+   explicitly in a `PORTING.md`/`FINDINGS.md` rather than leaving the
+   decision implicit in `alarm_face.rb`'s header comment alone — a header
+   comment on the *replacement* is not the same as a recorded decision
+   about the *thing being replaced*.

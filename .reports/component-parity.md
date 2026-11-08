@@ -3,110 +3,106 @@
 | | |
 |---|---|
 | Upstream | `master` @ `99afdd1` |
-| Port | `ruby` @ `e85d7e5` |
-| Units with parity | 11 / 23 user-facing units (same count the standing inventory reports; 0 of the 9 Alarm units have been started) |
+| Port | `ruby` @ `5c61e85` |
+| Units with a port file | 23 / 26 (up from 14 at the last round) |
+| Units with verified behaviour parity | Unverified for most — see Axis 3 |
 
-This is an adversarial pass against `.reports/component-inventory.md`
-(already in the repo) and `.reports/component-identification.md` (this
-round). It does not repeat every row of those documents; it states the
-verdict per axis and flags every place the standing inventory understates
-the gap.
+Adversarial pass against `.reports/component-identification.md` (this
+round) and the runtime gate (`drive_ok=true, 90/90, 7 components`). The
+Alarm panel's widgets landed since the last round (`834969c`); this report
+asks whether that closes the gap the last round found, or just moves it.
 
-## Axis 1 — Count (widgets)
+## Axis 1 — Count
 
-- **World panel (6 units):** ported in `e85d7e5`. Not independently re-verified
-  widget-by-widget in this pass beyond the file-existence check in
-  `component-identification.md` — that re-verification is itself owed before
-  this unit can be marked `parity` rather than merely `exists`. Treat World as
-  **unverified**, not **parity**, until Steps 4–5 of the `component-parity`
-  skill (stylesheet diff + driven signals) are actually run against it. No
-  driver exists to run them with (see `test-parity.md`), so they have not
-  been run.
-- **Alarm panel (9 units) — count is 0 vs upstream's dozens of widget rows**
-  (`Adw.Dialog`, `Adw.NavigationView`, 7×`Gtk.ToggleButton` day picker,
-  `Adw.ComboRow`×2, `Adw.Banner`, `Adw.ButtonRow`, etc.). Every row in the
-  standing inventory's "Alarms panel" section is `**Exists: no.**`. This pass
-  confirms it: no `alarm_*` or `sound_*` file exists anywhere in `lib/`.
-- **Support units — 0 of 3** (`geocoding.rb`, shell world-clocks D-Bus export,
-  search provider). `world_location_dialog.rb` exists but its search box has
-  no backing geocoding lookup to search against — confirm before counting the
-  World panel's search as functional (see Behaviour below).
+- **23/26 units have a port file.** The 3 missing: `alarm-ringing-panel`
+  (a real page, not a stub — see `component-identification.md` Finding 1),
+  `search-provider`, `world-shell-world-clocks` (both D-Bus services, both
+  documented as out-of-gem-scope in `lib/main.rb`'s header comment).
+- Within the Alarm panel specifically: face, row, setup dialog (with its
+  day-picker row), sound chooser (with its row), the sound/alarm-sound-model
+  layer, and the item model are all present. The **ringing panel is the one
+  Alarm-panel widget still absent**, and it is the one the user sees most
+  urgently — when the alarm they set actually goes off.
 
 ## Axis 2 — Style
 
-Not evaluated for Alarm (nothing to evaluate). For the ported units, this
-pass did not re-diff `data/css/gnome-clocks.css` against the port's
-stylesheet source — that diff is still owed. Flagging as **not confirmed**
-rather than asserting it passes.
+Not evaluated this round either. `data/css/gnome-clocks.css` has not been
+diffed against the port's `Utils.load_css` stylesheet string
+(`lib/utils.rb`). Flagging as **not confirmed**, not as passing, consistent
+with the last round's finding that this axis has never actually been run.
 
 ## Axis 3 — Behaviour
 
-Running the port under Xvfb (`nix develop --command xvfb-run -a ruby
-exe/gnome-clocks`) surfaces a live defect in a *ported* unit, not a missing
-one:
+The runtime gate for this round (`drive_ok=true, 90/90, 7 components`) is
+real — I re-ran it (`nix develop --command xvfb-run -a ruby
+test/drive_clocks.rb`) and reproduced 90/90, `DRIVE OK`. But the gate's
+reach needs checking against what it actually exercises, not just its pass
+count:
 
-```
-Gtk-WARNING: actionhelper: action timer-setup.start-timer can't be
-activated due to parameter type mismatch (parameter type i, target type x)
-```
-
-Fired once per quick-start button (8 times) on window open. Upstream's
-`timer-setup.vala` installs `start-timer` with an `i32` (`i`) parameter and
-targets the 8 quick-start durations with `i32` variants
-(`data/ui/timer-setup.ui`'s `action-target`); the port's
-`lib/timer_setup.rb` installs or targets the action with an `x` (`i64`)
-parameter instead, so **every quick-start timer button is non-functional** —
-clicking "1 m"/"2 m"/etc. silently does nothing because GTK refuses to
-activate a mismatched action. This is a **component-parity gap in a unit the
-standing inventory marks `Exists: yes`** — existence is not behaviour.
-
-No further behaviour axis checking was done for the ported units because no
-driver exists (see `test-parity.md`) — "driven: ✓" cannot be claimed for a
-single row in this port.
+- **It covers World, Stopwatch, Timer, and the Alarm list's CRUD (add,
+  toggle active, delete) plus window navigation/shortcuts/close-request** —
+  7 components, matching the gate.
+- **It never fires an alarm to its ringing state.** `grep -n "ring\b" test/
+  drive_clocks.rb` turns up exactly 2 hits, both on the model
+  (`AlarmItem#ring_time`/`#active?`) — never `AlarmItem#tick` driven to
+  `RINGING`, never `AlarmFace#ring`, never `app.stop-alarm` or
+  `app.snooze-alarm` activated, never a `Gio::Notification` inspected.
+  **The single most important behaviour an alarm clock has — what happens
+  when the alarm goes off — is completely outside this round's 90 checks.**
+  This is exactly the task's own standard: *"a component no check
+  exercises is unverified, not done."* The Alarm panel's CRUD is driven;
+  its ringing path is not.
+- The previously-found `timer-setup.start-timer` GVariant-type bug
+  (component-parity, prior round) is now fixed and is covered live by the
+  drive script's quick-start-button checks (`[49]`/`[50]` in this run's
+  output) — a real regression the last round's audit caught has since been
+  fixed and is now guarded by a check. Noting this so it is not re-flagged
+  as still-broken.
 
 ## Axis 4 — Text
 
-Zero. See `translation-parity.md`. No widget in the port, ported or not,
-carries a translation marker, so every Text cell in a `COMPONENT_PARITY.md`something
--style ledger for this app would read `✗`. This is a parity failure for all
-11 built units simultaneously, not a separate concern — `component-parity`
-names it as one of the four required axes, and it fails app-wide.
+Unchanged and still 0/217 — see `translation-parity.md`. This now applies
+to the Alarm panel's new strings too (every label in `alarm_face.rb`,
+`alarm_row.rb`, `alarm_setup_dialog.rb`, `sound_chooser.rb`,
+`sound_chooser_row.rb`, `alarm_day_picker_row.rb` is a bare Ruby literal with
+no translation marker — confirmed by the same `grep -rn 'gettext\|N_(\|n_(\|
+_("' lib/` that found nothing anywhere in `lib/`).
 
-## What the standing inventory undercounts
+## Documented, non-hidden design substitutions (not re-litigated as fresh findings)
 
-`.reports/component-inventory.md`'s "Totals" section (last line) says
-"11 ported, 12 missing" for user-facing units and treats that as the
-headline. Reading it as the whole picture misses:
+These are stated plainly in the port's own comments with upstream file:line
+references, which is what the `accountability-ensurance` skill asks for —
+listed here for completeness, not as new findings:
 
-1. The 11 "ported" units have **never been driven** (no test/ directory, no
-   `test/drive_*.rb` — the dev shell banner names a script that does not
-   exist). "Ported" here means "a `.rb` file exists that looks right," not
-   "verified against upstream."
-2. At least one of those 11 (`timer_setup.rb`) has a reproducible functional
-   bug found by simply launching the app for 30 seconds.
-3. The CSS-axis diff (Step 4 of the skill) has not been run on any unit.
-4. The text axis is 0/0 ported across the board (not noted in the standing
-   inventory at all).
+- `Adw.Application` → `Gtk::Application` (`lib/main.rb` header).
+- `dbus_register`'s search provider / Shell world-clocks export: not built
+  (`lib/main.rb` header; same gap as Finding 2 in `component-identification.md`).
+- `add-location`'s GWeather-variant deserialization (DBus activation path):
+  not built (`lib/main.rb` header).
+- GeoClue2 fetched via a plain `Gio::DBusConnection` call instead of a
+  GObject-Introspection binding, since none exists (`lib/geo_info.rb` header).
 
 ## Verdict
 
-**No unit in this port currently has component parity** under the skill's
-definition — "a unit has parity when every row says `parity`, the stylesheet
-and messages lines are clean, and the driven line has no ✗." Every unit here
-either doesn't exist (Alarm, 9 units + 3 support files) or hasn't had Steps
-4–5 run, and the one unit this pass did drive (Timer setup) failed on first
-contact.
+**Count parity improved sharply this round (14→23 of 26 units) and the
+previously-found `timer-setup` bug is fixed and now guarded.** But the one
+remaining missing widget — the Alarm Ringing panel — is not a minor one:
+it is the page upstream shows instead of letting the user navigate away or
+close the window while an alarm rings, and the port has no page there at
+all, only a notification. Combined with the fact that no check in this
+round's gate exercises the ringing path either way, "the Alarm panel is
+done" is not a safe claim yet — the panel's CRUD is done and driven; its
+central behaviour (ringing) has neither a widget nor a check.
 
 ## Gaps (ranked)
 
-1. **Alarm panel entirely unported** — 9 units, 0 built. The app ships with
-   no way to set an alarm at all.
-2. **No translation markers anywhere in `lib/` or `exe/`** — every built
-   unit fails the text axis.
-3. **`timer-setup.start-timer` action parameter type mismatch** — all 8
-   quick-start timer buttons are dead on arrival.
-4. **No CSS diff performed** — style axis unverified for all 11 built units.
-5. **`geocoding.rb`, shell D-Bus world-clocks export, `search-provider.rb`**
-   unported — "automatic location," the GNOME Shell clock applet integration,
-   and the Shell search provider do not exist.
-6. **World panel's `e85d7e5` commit has not been driven** — "exists" only.
+1. **`alarm-ringing-panel` has no port file.** Alarms ring (the model and
+   bell layer work), but the port shows no in-app page for it and does not
+   block the window from closing while one rings, unlike upstream.
+2. **No check anywhere drives an alarm to ringing.** The gate's "7
+   components, 90/90" does not include this path; it is unverified, not
+   passing.
+3. **Text axis is 0/217, now including every new Alarm-panel string.**
+4. **CSS/style axis has never been diffed**, for any of the 23 built units.
+5. **`search-provider.rb` and the Shell world-clocks D-Bus export remain
+   unported** — documented, unchanged from last round.

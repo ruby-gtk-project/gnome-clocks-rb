@@ -3,95 +3,98 @@
 | | |
 |---|---|
 | Upstream | `master` @ `99afdd1` |
-| Port | `ruby` @ `e85d7e5` |
-| Upstream tests | 0 (censused — see below) |
-| Ported | 0 |
-| Gaps (test-count) | 0 |
-| Port's own suite | **does not run** |
-| Test command (per dev-shell banner) | `xvfb-run ruby test/drive_*.rb` and an inline `rspec`/`spec` invocation |
+| Port | `ruby` @ `5c61e85` |
+| Upstream tests | 0 (upstream ships no test suite at all — unchanged) |
+| Port's own suite | `test/drive_clocks.rb` + `test/gtk_driver.rb` — **runs, and passes** |
+| This round's result | `90 of 90 checks passed, DRIVE OK` (reproduced live) |
+| `spec/` (RSpec) | Still has zero `*_spec.rb` files; still fails to load |
 
-## Step 1 — Census upstream
+This supersedes the `e85d7e5`-era copy, which reported `drive_ok=false, 0/0,
+0 components` because `test/` did not exist yet. `e4ab805` ("Add a driving
+test harness and fix the bugs it found") built it since. This is real,
+substantial progress — but "the suite runs and passes" is not the same
+claim as "the suite covers the app," and that gap is this report's job.
 
-```sh
-scripts/test-census.sh /tmp/up-clocks   # (worktree of origin/master @ 99afdd1)
-```
+## Step 1 — Upstream census (unchanged)
 
-0 rows. Confirmed by hand: no `tests/` or `test/` directory, no
-`g_test_add_func`/`Test.add_func`, no `meson.build` test target anywhere in
-upstream `gnome-clocks`. GNOME Clocks genuinely ships no test suite.
+Confirmed again: no `tests/`/`test/` directory, no `g_test_add_func`, no
+meson test target anywhere in `origin/master`. 0/0 upstream tests, met
+trivially.
 
-Per the skill's "When upstream has no tests" section: **this is not a license
-to skip the rest of the skill.** The parity count is 0/0 and is met
-trivially — but the port inherits no safety net, and that is a separate,
-harder claim that this round's runtime gate speaks to directly.
+## Step 2 — Does the port's suite run?
 
-## Step 2 — Does the port have its own suite, and does it run?
-
-The repo ships `spec/` (RSpec) with exactly two files: `spec/README.md` and
-`spec/spec_helper.rb`. **There is not one `*_spec.rb` file in the entire
-tree.** `grep -rl` for `describe\|RSpec.describe\|it ['"]` over `spec/`
-returns nothing, because there is nothing to match.
-
-The dev shell banner additionally advertises a driver:
+Yes, reproduced directly this round:
 
 ```
-drive the app: xvfb-run ruby test/drive_*.rb
-```
-
-**`test/` does not exist.** Confirmed:
-
-```
-$ nix develop --command xvfb-run -a ruby test/drive_main.rb
-.../ruby: No such file or directory -- test/drive_main.rb (LoadError)
-```
-
-Running the RSpec invocation the banner also advertises:
-
-```
-$ nix develop --command xvfb-run -a ruby -e 'require "rspec/core"; exit \
-    RSpec::Core::Runner.run(["--format","progress","--require","spec_helper","spec"])'
+$ nix develop --command xvfb-run -a ruby test/drive_clocks.rb
 ...
+90 of 90 checks passed
+DRIVE OK
+```
+
+This is a genuine, executed, passing run — not a claim read off source. The
+dev shell's advertised `xvfb-run ruby test/drive_*.rb` command now matches
+reality.
+
+`spec/` is unchanged from the last round: still only `README.md` and
+`spec_helper.rb`, still zero `*_spec.rb` files, and the dev shell's own
+RSpec invocation still fails identically:
+
+```
 LoadError: cannot load such file -- kettle/test/rspec
   # ./spec/spec_helper.rb:23
-No examples found.
-Finished in 0.00009 seconds
 0 examples, 0 failures, 2 errors occurred outside of examples
 ```
 
-`spec_helper.rb` itself fails to load — `kettle/test/rspec` is not resolvable
-in the dev shell's bundle — so even an empty spec run cannot complete
-cleanly; it errors twice before reporting 0 examples.
+Not re-run in full this round since nothing in `spec/` changed since the
+last round's reproduction; the finding stands unchanged.
 
-This matches, exactly, the runtime gate stated for this round: **drive_ok =
-false, 0 checks passed, 0 failed, 0 components covered.** That is not a
-flaky or partial run. There is no test code to run, and the one harness that
-exists cannot load.
+## Step 3 — What the 90 checks actually cover
 
-## Step 3 — What this means for the 11 "ported" units
+Read `test/drive_clocks.rb` section by section against the panels it talks
+to (`grep -n '\[[0-9]\+\]' test/drive_clocks.rb` for the numbered steps the
+run output prints, cross-checked against the panel/dialog each step
+touches):
 
-Per the task's framing and the `component-parity` skill: **a component no
-check exercises is unverified, not done.** Concretely, that includes:
+| Component | Covered? | What's checked |
+|---|---|---|
+| World panel (add/search/empty/standalone) | yes | add-location dialog open, search, select, add, empty state before/after |
+| Stopwatch panel | yes | start, lap, pause (Escape), reset (Escape), needs-attention dot |
+| Timer panel | yes | quick-start buttons, pause, reset, delete, New Timer dialog, Escape-pauses-all |
+| Alarm panel (list CRUD) | yes | add via setup dialog, toggle active switch, delete, empty state |
+| Window chrome | yes | navigate-forward/backward across all 4 panels, shortcuts dialog, close-request hides not destroys |
+| Shortcuts dialog | yes | opens, is a dialog |
+| About dialog | implied by drive-findings.md, not re-verified this round | — |
+| **Alarm *ringing*** | **no** | **zero steps advance an alarm to `RINGING`, call `AlarmFace#ring`, activate `app.stop-alarm`/`app.snooze-alarm`, or inspect a `Gio::Notification`** |
+| Alarm snooze | **no** | `AlarmItem#snooze` is referenced nowhere in `test/drive_clocks.rb` outside the two model-check lines already present at the last round |
+| Sound chooser | **no** | no step opens `SoundChooser` or exercises bell preview playback |
 
-- The World panel landed in `e85d7e5` with zero accompanying tests or driver
-  checks.
-- `lib/timer_setup.rb`'s quick-start buttons were found broken
-  (`component-parity.md`) by a 30-second manual launch — exactly the kind of
-  regression a driver script exists to catch on every change, and exactly
-  the kind that ships silently when no driver exists.
-- Every other "ported" unit (window, header bar, shortcuts dialog, stopwatch,
-  timer) has the same status: present in source, never exercised.
+This is the runtime gate's own "7 components" — I count the same 7 the gate
+reports (World, Stopwatch, Timer, Alarm-list, window/navigation, shortcuts,
+and close-request-as-its-own-behavior). **The count is accurate. The
+coverage is narrower than "the Alarm panel is tested" would suggest**: the
+Alarm panel's CRUD is a component; the Alarm panel's actual alarm — ringing,
+snoozing, stopping, the sound chooser — is a different component, and it
+has no check.
 
-## Extra
+## Step 4 — Per the task's framing
 
-None. There is no test code in the port at all to list under `## Extra`.
+*"Treat a failed or narrow drive run as a parity gap in its own right — a
+component no check exercises is unverified, not done."* Applying that
+literally: the ringing path, the snooze path, and the sound chooser are
+each a component no check exercises. They are not "done" by this round's
+gate passing, regardless of the fact that the gate itself is honest about
+what it covers (it never claims to cover ringing).
 
 ## Verdict
 
-Test parity on the *count* is 0/0 and trivially met, because upstream ships
-no tests. But the port is not merely "untested relative to upstream" — it is
-**untested, full stop**, and the one test command the project's own dev shell
-documents fails to execute. The standing `.reports/component-inventory.md`
-and `PORTING.md`-style documents have at no point recorded this as a gap in
-its own right; it should be the single loudest finding in this round, because
-every other document's "exists: yes" claims rest on nothing but a visual
-read of the source.
+**Real progress since the last round**: a driver now exists, runs, and
+passes 90/90, closing the `drive_ok=false` finding entirely for the 7
+components it covers. **The suite's blind spot is exactly where the
+previous round's `component-parity.md` found the remaining widget gap**:
+ringing. This is not a coincidence worth treating as resolved by proximity
+— the Alarm Ringing panel has neither a port file nor a check, and those
+are the same missing feature seen from two reports.
+
+`spec/`'s RSpec harness remains broken and uncounted by the gate, unchanged
+from the last round.
