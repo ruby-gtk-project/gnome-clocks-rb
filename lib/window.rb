@@ -48,7 +48,7 @@ class Window < Adwaita::ApplicationWindow
   COPYRIGHT = "© 2011 Collabora Ltd.\n" \
               "© 2012-2013 Collabora Ltd., Seif Lotfy, Emily Gonyer, " \
               "Eslam Mostafa, Paolo Borelli, Volker Sobek\n" \
-              '© 2019-2020 Bilal Elmoussaoui & Zander Brown et al'
+              '© 2019-2020 Bilal Elmoussaoui &amp; Zander Brown et al'
 
   DEVELOPERS = [
     'Alex Anthony', 'Paolo Borelli', 'Allan Day', 'Piotr Drąg', 'Emily Gonyer',
