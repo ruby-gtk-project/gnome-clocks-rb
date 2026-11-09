@@ -96,6 +96,13 @@ Gem::Specification.new do |spec|
   spec.executables = ["gnome-clocks"]
   spec.require_paths = ["lib"]
 
+  spec.add_dependency("adwaita")
+  spec.add_dependency("geocode-glib")
+  spec.add_dependency("glib2")
+  spec.add_dependency("gnome_desktop")
+  spec.add_dependency("gtk4")
+  spec.add_dependency("libgweather")
+
   # NOTE: It is preferable to list development dependencies in the gemspec due to increased
   #       visibility and discoverability.
   #       However, development dependencies in gemspec will install on
@@ -108,16 +115,6 @@ Gem::Specification.new do |spec|
   #
   #       Development dependencies that require strictly newer Ruby versions should be in a "gemfile",
   #       and preferably a modular one (see gemfiles/modular/*.gemfile).
-
-  # Toolkit
-  spec.add_dependency("gtk4")
-  spec.add_dependency("adwaita")
-  spec.add_dependency("glib2")
-
-  # World clocks: timezone lookup, geocoding, and sunrise/sunset shading.
-  spec.add_dependency("libgweather")
-  spec.add_dependency("geocode-glib")
-  spec.add_dependency("gnome_desktop")
 
   # Dev, Test, & Release Tasks
   spec.add_development_dependency("kettle-dev", "~> 3.1", ">= 3.1.26")             # ruby >= 3.4
